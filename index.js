@@ -308,7 +308,7 @@ db.init();
 app.use(cors());
 app.use(express.json());
 
-app.get("/users/:id", (req, res) => {
+app.get("/:id", (req, res) => {
   try {
     const id = req.params.id; 
     const result = db.findById(id);
