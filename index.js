@@ -2,8 +2,14 @@ const fs = require('fs');
 const express = require('express');
 const app = express();
 const cors = require("cors");
+const crypto = require('crypto');
+
 const DB_FILENAME = 'users.jsonl';
 const IDX_FILENAME = 'users.idx';
+
+// ==========================================
+// 1. AVL TREE CLASSES
+// ==========================================
 
 class Node {
   constructor(id, filePosition) {
@@ -20,177 +26,105 @@ class AvlIndexTree {
     this.root = null;
   }
 
-  getHeight(n) {
-    return n ? n.height : 0;
-  }
-
-  getBalance(n) {
-    return n
-      ? this.getHeight(n.left) - this.getHeight(n.right)
-      : 0;
-  }
+  getHeight(n) { return n ? n.height : 0; }
+  getBalance(n) { return n ? this.getHeight(n.left) - this.getHeight(n.right) : 0; }
 
   rotateRight(y) {
-    const x = y.left;
-    const T2 = x.right;
-
-    x.right = y;
-    y.left = T2;
-
-    y.height =
-      Math.max(
-        this.getHeight(y.left),
-        this.getHeight(y.right)
-      ) + 1;
-
-    x.height =
-      Math.max(
-        this.getHeight(x.left),
-        this.getHeight(x.right)
-      ) + 1;
-
+    const x = y.left; const T2 = x.right;
+    x.right = y; y.left = T2;
+    y.height = Math.max(this.getHeight(y.left), this.getHeight(y.right)) + 1;
+    x.height = Math.max(this.getHeight(x.left), this.getHeight(x.right)) + 1;
     return x;
   }
 
   rotateLeft(x) {
-    const y = x.right;
-    const T2 = y.left;
-
-    y.left = x;
-    x.right = T2;
-
-    x.height =
-      Math.max(
-        this.getHeight(x.left),
-        this.getHeight(x.right)
-      ) + 1;
-
-    y.height =
-      Math.max(
-        this.getHeight(y.left),
-        this.getHeight(y.right)
-      ) + 1;
-
+    const y = x.right; const T2 = y.left;
+    y.left = x; x.right = T2;
+    x.height = Math.max(this.getHeight(x.left), this.getHeight(x.right)) + 1;
+    y.height = Math.max(this.getHeight(y.left), this.getHeight(y.right)) + 1;
     return y;
   }
 
   insert(id, filePosition) {
-    this.root = this._insert(
-      this.root,
-      id,
-      filePosition
-    );
+    this.root = this._insert(this.root, id, filePosition);
   }
 
   _insert(node, id, filePosition) {
-    if (!node) {
-      //console.log("➕ Insert", id, "at", filePosition);
-      return new Node(id, filePosition);
-    }
+    if (!node) return new Node(id, filePosition);
 
-    if (id < node.id) {
-      node.left = this._insert(
-        node.left,
-        id,
-        filePosition
-      );
-    } else if (id > node.id) {
-      node.right = this._insert(
-        node.right,
-        id,
-        filePosition
-      );
-    } else {
-      //console.log("♻️ Update index", id);
-      node.filePosition = filePosition;
-      return node;
-    }
+    if (id < node.id) node.left = this._insert(node.left, id, filePosition);
+    else if (id > node.id) node.right = this._insert(node.right, id, filePosition);
+    else { node.filePosition = filePosition; return node; }
 
-    node.height =
-      1 +
-      Math.max(
-        this.getHeight(node.left),
-        this.getHeight(node.right)
-      );
-
+    node.height = 1 + Math.max(this.getHeight(node.left), this.getHeight(node.right));
     const balance = this.getBalance(node);
 
-    if (balance > 1 && id < node.left.id) {
-      //console.log("↩️ Right Rotate", node.id);
-      return this.rotateRight(node);
-    }
-
-    if (balance < -1 && id > node.right.id) {
-      //onsole.log("↪️ Left Rotate", node.id);
-      return this.rotateLeft(node);
-    }
-
-    if (balance > 1 && id > node.left.id) {
-      //console.log("🔁 Left-Right Rotate", node.id);
-      node.left = this.rotateLeft(node.left);
-      return this.rotateRight(node);
-    }
-
-    if (balance < -1 && id < node.right.id) {
-      //console.log("🔁 Right-Left Rotate", node.id);
-      node.right = this.rotateRight(node.right);
-      return this.rotateLeft(node);
-    }
+    if (balance > 1 && id < node.left.id) return this.rotateRight(node);
+    if (balance < -1 && id > node.right.id) return this.rotateLeft(node);
+    if (balance > 1 && id > node.left.id) { node.left = this.rotateLeft(node.left); return this.rotateRight(node); }
+    if (balance < -1 && id < node.right.id) { node.right = this.rotateRight(node.right); return this.rotateLeft(node); }
 
     return node;
   }
 
   findFilePosition(id) {
     let current = this.root;
-
     while (current) {
-      if (id === current.id) {
-        return current.filePosition;
-      }
-      if (id < current.id) {
-        current = current.left;
-      } else {
-        current = current.right;
-      }
+      if (id === current.id) return current.filePosition;
+      if (id < current.id) current = current.left;
+      else current = current.right;
     }
     return null;
   }
 
   toArray() {
-    console.time("Index serialization time");
-
     const res = [];
     const stack = [];
     let cur = this.root;
-
     while (cur || stack.length) {
-      while (cur) {
-        stack.push(cur);
-        cur = cur.left;
-      }
+      while (cur) { stack.push(cur); cur = cur.left; }
       cur = stack.pop();
-      res.push({
-        id: cur.id,
-        filePosition: cur.filePosition
-      });
+      res.push({ id: cur.id, filePosition: cur.filePosition });
       cur = cur.right;
     }
-
-    console.timeEnd("Index serialization time");
     return res;
   }
 
   toTree(list) {
-    console.time("Index load time");
     this.root = null;
+    for (const n of list) this.insert(n.id, n.filePosition);
+  }
 
-    for (const n of list) {
-      this.insert(n.id, n.filePosition);
+  getRange(offset, limit) {
+    const result = [];
+    let count = 0;
+
+    const traverse = (node) => {
+      if (!node || result.length >= limit) return;
+      
+      traverse(node.left);
+
+    
+      if (result.length < limit) {
+        if (count >= offset) {
+          result.push({ id: node.id, pos: node.filePosition });
+        }
+        count++; 
+      }
+
+      if (result.length < limit) {
+        traverse(node.right);
+      }
     }
 
-    console.timeEnd("Index load time");
+    traverse(this.root);
+    return result;
   }
 }
+
+// ==========================================
+// 2. DATABASE ENGINE
+// ==========================================
 
 class GigaDb {
   constructor() {
@@ -201,18 +135,13 @@ class GigaDb {
     if (!fs.existsSync(DB_FILENAME)) {
       fs.writeFileSync(DB_FILENAME, '');
       console.log("📁 DB file created");
-      this.seed(100000);
-    }
-
-    if (fs.existsSync(IDX_FILENAME)) {
-      //console.log("⚡ Fast boot: loading index");
-      const raw = fs.readFileSync(
-        IDX_FILENAME,
-        'utf-8'
-      );
+      this.seed(1000000); 
+    } else if (fs.existsSync(IDX_FILENAME)) {
+      console.log("⚡ Loading index from disk...");
+      const raw = fs.readFileSync(IDX_FILENAME, 'utf-8');
       this.indexTree.toTree(JSON.parse(raw));
     } else {
-      console.log("🛠️ Rebuilding index");
+      console.log("🛠️ Rebuilding index...");
       this.rebuildIndex();
       this.saveIndex();
     }
@@ -220,215 +149,177 @@ class GigaDb {
 
   async seed(count) {
     console.time("Seeding time");
-
-    const stream = fs.createWriteStream(
-      DB_FILENAME,
-      { flags: 'a' }
-    );
+    const stream = fs.createWriteStream(DB_FILENAME, { flags: 'a' });
+    
+    let currentPos = 0;
+    if (fs.existsSync(DB_FILENAME)) {
+        currentPos = fs.statSync(DB_FILENAME).size;
+    }
 
     for (let i = 0; i < count; i++) {
+      const uniqueId = crypto.randomUUID();
       const user = {
-        id: i + 1,
+        id: uniqueId,
         name: `User${i}`,
-        email: `user${i}@gmail.com`
+        email: `user${i}@gmail.com`,
+        createdAt: Date.now()
       };
 
-      const data =
-        JSON.stringify(user) + '\n';
-
+      const data = JSON.stringify(user) + '\n';
       const len = Buffer.alloc(4);
       len.writeUInt32BE(data.length);
-
-      const buf = Buffer.concat([
-        len,
-        Buffer.from(data)
-      ]);
+      const buf = Buffer.concat([len, Buffer.from(data)]);
 
       if (!stream.write(buf)) {
-        await new Promise(r =>
-          stream.once("drain", r)
-        );
+        await new Promise(r => stream.once("drain", r));
       }
 
-      console.log("Inserted user", user.id);
+      this.indexTree.insert(uniqueId, currentPos);
+      
+      currentPos += buf.length; 
     }
 
     stream.end();
     console.timeEnd("Seeding time");
+    this.saveIndex(); 
   }
 
   rebuildIndex() {
-    const data = fs.readFileSync(
-      DB_FILENAME,
-      'utf-8'
-    );
-
+    console.time("rebuilding index file")
+    const data = fs.readFileSync(DB_FILENAME, 'utf-8');
     const lines = data.split('\n');
     let pos = 0;
 
     for (const line of lines) {
       if (!line) continue;
 
-      const match = line.match(/"id":(\d+)/);
+      const match = line.match(/"id":"([^"]+)"/);
+      
       if (match) {
-        console.log(
-          "Indexing ID",
-          match[1],
-          "at",
-          pos
-        );
-        this.indexTree.insert(
-          parseInt(match[1]),
-          pos
-        );
+        this.indexTree.insert(match[1], pos);
       }
 
       pos += Buffer.byteLength(line + '\n');
     }
+
+    console.timeEnd("rebuilding index file");
   }
 
   saveIndex() {
-    console.log("💾 Saving index");
-    fs.writeFileSync(
-      IDX_FILENAME,
-      JSON.stringify(this.indexTree.toArray())
-    );
+    console.time("💾 Saving index");
+    fs.writeFileSync(IDX_FILENAME, JSON.stringify(this.indexTree.toArray()));
+    console.timeEnd("💾 Saving index");
   }
 
   findById(id) {
     const start = process.hrtime.bigint();
-
-    id = parseInt(id);
-
-    const position =
-      this.indexTree.findFilePosition(id);
+    const position = this.indexTree.findFilePosition(id);
 
     if (position === null) {
       const end = process.hrtime.bigint();
-      return {
-        data: null,
-        time_ms: Number(end - start) / 1e6
-      };
+      return { data: null, time_ms: Number(end - start) / 1e6 };
     }
 
     const fd = fs.openSync(DB_FILENAME, "r");
-
     const lenBuf = Buffer.alloc(4);
     fs.readSync(fd, lenBuf, 0, 4, position);
-
     const size = lenBuf.readUInt32BE(0);
-
     const dataBuf = Buffer.alloc(size);
-    fs.readSync(
-      fd,
-      dataBuf,
-      0,
-      size,
-      position + 4
-    );
-
+    fs.readSync(fd, dataBuf, 0, size, position + 4);
     fs.closeSync(fd);
-    
 
     const end = process.hrtime.bigint();
 
     return {
-      data: JSON.parse(
-        dataBuf.toString("utf8")
-      ),
+      data: JSON.parse(dataBuf.toString("utf8")),
       time_ms: Number(end - start) / 1e6
     };
   }
 
-  findByPage(pageNumeber){
+  findByPage(pageNumber) {
     const start = process.hrtime.bigint();
-    pageNumeber = parseInt(pageNumeber);
+    pageNumber = parseInt(pageNumber) || 1;
 
-    let lastUser ;
-    let firstUser ;
-    if(pageNumeber === 1){
-        firstUser = 1;
-        lastUser = 99;
-    }
-    else if (pageNumeber < 1) return null;
-    else{
-        lastUser = pageNumeber*100;
-        firstUser = lastUser-100;
+    const limit = 20; 
+    const offset = (pageNumber - 1) * limit;
+
+    const nodeDataList = this.indexTree.getRange(offset, limit);
+
+    if (nodeDataList.length === 0) {
+        return { users: [], time_ms: 0 };
     }
 
-    const fd = fs.openSync(DB_FILENAME , 'r');
+    const fd = fs.openSync(DB_FILENAME, 'r');
     const users = [];
+    const lenBuf = Buffer.alloc(4);
 
-    for(let i = firstUser ; i < lastUser ; i++ ){
-        const position = this.indexTree.findFilePosition(i);
-        if(!position) {
-            continue;
-        }
-
-        const lenbuf = Buffer.alloc(4);
-        fs.readSync(fd , lenbuf , 0 , 4 , position);
-        const size = lenbuf.readInt32BE(0);
+    for (const node of nodeDataList) {
+        fs.readSync(fd, lenBuf, 0, 4, node.pos);
+        const size = lenBuf.readUInt32BE(0);
         const dataBuffer = Buffer.alloc(size);
-
-        fs.readSync(fd,dataBuffer , 0 , size , position +4);
-
+        fs.readSync(fd, dataBuffer, 0, size, node.pos + 4);
         users.push(JSON.parse(dataBuffer));
     }
 
     fs.closeSync(fd);
-
     const end = process.hrtime.bigint();
 
     return {
-        users : users,
+        users: users,
         time_ms: Number(end - start) / 1e6
     }
-
   }
+
+  async insertUser(name, email) {
+    const uniqueId = crypto.randomUUID();
+    const user = {
+      id: uniqueId,
+      name: name,
+      email: email,
+      createdAt: Date.now()
+    };
+
+    const data = JSON.stringify(user) + '\n';
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const buf = Buffer.concat([len, Buffer.from(data)]);
+
+    let currentPos = 0;
+    if (fs.existsSync(DB_FILENAME)) {
+      currentPos = fs.statSync(DB_FILENAME).size;
+    }
+
+    fs.appendFileSync(DB_FILENAME, buf);
+    this.indexTree.insert(uniqueId, currentPos);
+    
+    this.saveIndex(); 
+
+    return user;
+  }  
 }
+
+// ==========================================
+// 3. EXPRESS SERVER
+// ==========================================
 
 const db = new GigaDb();
 db.init();
-db.findById(1000);
-
-
-
 
 app.use(cors());
 app.use(express.json());
 
-app.get("/:id", (req, res) => {
+app.get("/users/:id", (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-
-    if (Number.isNaN(id)) {
-      return res.status(400).json({
-        success: false,
-        msg: "Valid id required"
-      });
-    }
-
+    const id = req.params.id; 
     const result = db.findById(id);
 
     if (!result.data) {
-      return res.status(404).json({
-        success: false,
-        time_ms: result.time_ms,
-        msg: "User not found"
-      });
+      return res.status(404).json({ success: false, msg: "User not found" });
     }
 
-    res.json({
-      success: true,
-      time_ms: result.time_ms,
-      user: result.data
-    });
-
+    res.json({ success: true, time_ms: result.time_ms, user: result.data });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      msg: err.message
-    });
+    res.status(500).json({ success: false, msg: err.message });
   }
 });
 
@@ -436,8 +327,7 @@ app.get("/users/page/:id", (req, res) => {
   try {
     const page = req.params.id;
     const result = db.findByPage(page);
-    //console.log(result.time_ms)
-
+    
     res.json({
       success: true,
       page: Number(page),
@@ -445,15 +335,24 @@ app.get("/users/page/:id", (req, res) => {
       time_taken: result.time_ms
     });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      msg: err.message
-    });
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
+app.post("/users", async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    if (!name || !email) {
+      return res.status(400).json({ success: false, msg: "Name and Email required" });
+    }
+    
+    const newUser = await db.insertUser(name, email);
+    res.json({ success: true, user: newUser });
+  } catch (err) {
+    res.status(500).json({ success: false, msg: err.message });
   }
 });
 
 app.listen(7101, () => {
-  console.log(
-    "🚀 DB Server running on port 7101"
-  );
+  console.log("🚀 DB Server running on port 7101");
 });
